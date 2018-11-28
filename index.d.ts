@@ -1,18 +1,17 @@
 // Project: Immutability helper
 // TypeScript Version: 3.1
 
-declare function newContext(): {
+export declare function newContext(): {
     <T, C extends CustomCommands<object> = never>(object: T, $spec: Spec<T, C>): T;
     extend<T>(directive: string, fn: (param: any, old: T) => T): void;
     isEquals(a: any, b: any): boolean;
 };
-declare const contextForExport: {
+declare const _default: {
     <T, C extends CustomCommands<object> = never>(object: T, $spec: Spec<T, C>): T;
     extend<T>(directive: string, fn: (param: any, old: T) => T): void;
     isEquals(a: any, b: any): boolean;
 };
-export default contextForExport;
-export { newContext };
+export default _default;
 export declare type CustomCommands<T> = T & {
     __noInferenceCustomCommandsBrand: any;
 };
