@@ -8,7 +8,13 @@ function type<T>(obj: T) {
   return (toString.call(obj) as string).slice(8, -1);
 }
 
-const assign = Object.assign || /* istanbul ignore next */ (<T, S>(target: T, source: S) => {
+const assign = Object.assign || /* istanbul ignore next */ (<
+  T extends {[key: string]: any},
+  S extends {[key: string]: any},
+>(
+  target: T,
+  source: S,
+) => {
   getAllKeys(source).forEach(key => {
     if (hasOwnProperty.call(source, key)) {
       target[key] = source[key];
@@ -18,9 +24,9 @@ const assign = Object.assign || /* istanbul ignore next */ (<T, S>(target: T, so
 });
 
 const getAllKeys = typeof Object.getOwnPropertySymbols === 'function'
-  ? obj => Object.keys(obj).concat(Object.getOwnPropertySymbols(obj) as any)
+  ? <T>(obj: T) => Object.keys(obj).concat(Object.getOwnPropertySymbols(obj) as any)
   /* istanbul ignore next */
-  : obj => Object.keys(obj);
+  : <T>(obj: T) => Object.keys(obj);
 
 function copy<T, U, K, V, X>(
   object: T extends U[]
@@ -46,7 +52,8 @@ function copy<T, U, K, V, X>(
 }
 
 export class Context {
-  private commands = assign({}, defaultCommands);
+  private commands: typeof defaultCommands & {[key: string]: any} =
+    assign({}, defaultCommands);
   constructor() {
     this.update = this.update.bind(this);
     // Deprecated: update.extend, update.isEquals and update.newContext
@@ -57,7 +64,7 @@ export class Context {
   get isEquals() {
     return (this.update as any).isEquals;
   }
-  set isEquals(value: (x, y) => boolean) {
+  set isEquals(value: (x: any, y: any) => boolean) {
     (this.update as any).isEquals = value;
   }
   public extend<T>(directive: string, fn: (param: any, old: T) => T) {
@@ -122,72 +129,127 @@ export class Context {
   }
 }
 
-const defaultCommands = {
-  $push(value: any, nextObject: any, spec: any) {
-    invariantPushAndUnshift(nextObject, spec, '$push');
-    return value.length ? nextObject.concat(value) : nextObject;
-  },
-  $unshift(value: any, nextObject: any, spec: any) {
-    invariantPushAndUnshift(nextObject, spec, '$unshift');
-    return value.length ? value.concat(nextObject) : nextObject;
-  },
-  $splice(value: any, nextObject: any, spec: any, originalObject: any) {
-    invariantSplices(nextObject, spec);
-    value.forEach((args: any) => {
-      invariantSplice(args);
-      if (nextObject === originalObject && args.length) {
+function $push<T, C extends CustomCommands<object> = never>(
+  value: T[],
+  nextObject: T[],
+  spec: T[] extends (Array<infer U> | ReadonlyArray<infer U>)
+    ? ArraySpec<U, C>
+    : never,
+) {
+  invariantPushAndUnshift(nextObject, spec, '$push');
+  return value.length ? nextObject.concat(value) : nextObject;
+}
+
+function $unshift<T, C extends CustomCommands<object> = never>(
+  value: T[],
+  nextObject: T[],
+  spec: T[] extends (Array<infer U> | ReadonlyArray<infer U>)
+    ? ArraySpec<U, C>
+    : never,
+) {
+  invariantPushAndUnshift(nextObject, spec, '$unshift');
+  return value.length ? value.concat(nextObject) : nextObject;
+}
+
+function $splice<T>(
+  value: T[],
+  nextObject: T[],
+  spec: T[] extends (Array<infer U> | ReadonlyArray<infer U>)
+    ? ISpliceSpec<U>
+    : never,
+  originalObject: T[],
+) {
+  invariantSplices(nextObject, spec);
+  value.forEach((args: any) => {
+    invariantSplice(args);
+    if (nextObject === originalObject && args.length) {
+      nextObject = copy(originalObject);
+    }
+    splice.apply(nextObject, args);
+  });
+  return nextObject;
+}
+
+function $set<T, C extends CustomCommands<object> = never>(
+  value: T,
+  _nextObject: T,
+  spec: Spec<T, C>,
+) {
+  invariantSet(spec);
+  return value;
+}
+
+function $toggle<T>(keys: Array<keyof T>, nextObject: T) {
+  invariantSpecArray(keys, '$toggle');
+  const nextObjectCopy = keys.length ? copy(nextObject) : nextObject;
+
+  keys.forEach(target => {
+    nextObjectCopy[target] = !nextObject[target];
+  });
+
+  return nextObjectCopy;
+}
+
+function $unset<T extends {[key: string]: any}>(
+  keys: Array<keyof T>,
+  nextObject: T,
+  _spec: IUnsetSpec<T>,
+  originalObject: T,
+) {
+  invariantSpecArray(keys, '$unset');
+  keys.forEach((key: any) => {
+    if (Object.hasOwnProperty.call(nextObject, key)) {
+      if (nextObject === originalObject) {
         nextObject = copy(originalObject);
       }
-      splice.apply(nextObject, args);
-    });
-    return nextObject;
-  },
-  $set(value: any, _nextObject: any, spec: any) {
-    invariantSet(spec);
-    return value;
-  },
-  $toggle(targets: any, nextObject: any) {
-    invariantSpecArray(targets, '$toggle');
-    const nextObjectCopy = targets.length ? copy(nextObject) : nextObject;
-
-    targets.forEach((target: any) => {
-      nextObjectCopy[target] = !nextObject[target];
-    });
-
-    return nextObjectCopy;
-  },
-  $unset(value: any, nextObject: any, _spec: any, originalObject: any) {
-    invariantSpecArray(value, '$unset');
-    value.forEach((key: any) => {
-      if (Object.hasOwnProperty.call(nextObject, key)) {
-        if (nextObject === originalObject) {
-          nextObject = copy(originalObject);
-        }
-        delete nextObject[key];
-      }
-    });
-    return nextObject;
-  },
-  $add(values: any, nextObject: any, _spec: any, originalObject: any) {
-    invariantMapOrSet(nextObject, '$add');
-    invariantSpecArray(values, '$add');
-    if (type(nextObject) === 'Map') {
-      values.forEach(([key, value]) => {
-        if (nextObject === originalObject && nextObject.get(key) !== value) {
-          nextObject = copy(originalObject);
-        }
-        nextObject.set(key, value);
-      });
-    } else {
-      values.forEach((value: any) => {
-        if (nextObject === originalObject && !nextObject.has(value)) {
-          nextObject = copy(originalObject);
-        }
-        nextObject.add(value);
-      });
+      delete nextObject[key];
     }
-    return nextObject;
-  },
+  });
+  return nextObject;
+}
+
+function $add<T, C extends CustomCommands<object> = never>(
+  values: T extends (Map<infer K, infer V> | ReadonlyMap<infer K, infer V>)
+    ? MapSpec<K, V, C>
+    : T extends (Set<infer X> | ReadonlySet<infer X>)
+      ? SetSpec<X>
+      : never,
+  nextObject: any,
+  _spec: T extends (Map<infer K, infer V> | ReadonlyMap<infer K, infer V>)
+    ? MapSpec<K, V, C>
+    : T extends (Set<infer X> | ReadonlySet<infer X>)
+      ? SetSpec<X>
+      : never,
+  originalObject: any,
+) {
+  invariantMapOrSet(nextObject, '$add');
+  invariantSpecArray(values, '$add');
+  if (type(nextObject) === 'Map') {
+    values.forEach(([key, value]) => {
+      if (nextObject === originalObject && nextObject.get(key) !== value) {
+        nextObject = copy(originalObject);
+      }
+      nextObject.set(key, value);
+    });
+  } else {
+    values.forEach((value: any) => {
+      if (nextObject === originalObject && !nextObject.has(value)) {
+        nextObject = copy(originalObject);
+      }
+      nextObject.add(value);
+    });
+  }
+  return nextObject;
+}
+
+const defaultCommands = {
+  $push,
+  $unshift,
+  $splice,
+  $set,
+  $toggle,
+  $unset,
+  $add,
   $remove(value: any, nextObject: any, _spec: any, originalObject: any) {
     invariantMapOrSet(nextObject, '$remove');
     invariantSpecArray(value, '$remove');
@@ -227,7 +289,13 @@ exports.default.default = module.exports = assign(exports.default, exports);
 
 // invariants
 
-function invariantPushAndUnshift(value: any, spec: any, command: any) {
+function invariantPushAndUnshift<T, C extends CustomCommands<object> = never>(
+  value: T[],
+  spec: T[] extends (Array<infer U> | ReadonlyArray<infer U>)
+    ? ArraySpec<U, C> & {[key: string]: any}
+    : never,
+  command: '$push' | '$unshift',
+) {
   invariant(
     Array.isArray(value),
     'update(): expected target of %s to be an array; got %s.',
@@ -237,7 +305,12 @@ function invariantPushAndUnshift(value: any, spec: any, command: any) {
   invariantSpecArray(spec[command], command);
 }
 
-function invariantSpecArray(spec: any, command: any) {
+function invariantSpecArray<T, C extends CustomCommands<object> = never>(
+  spec: T[] extends (Array<infer U> | ReadonlyArray<infer U>)
+    ? ArraySpec<U, C> & {[key: string]: any}
+    : never,
+  command: '$push' | '$remove' | '$toggle' | '$unset' | '$unshift',
+) {
   invariant(
     Array.isArray(spec),
     'update(): expected spec of %s to be an array; got %s. ' +
@@ -247,7 +320,12 @@ function invariantSpecArray(spec: any, command: any) {
   );
 }
 
-function invariantSplices(value: any, spec: any) {
+function invariantSplices<T>(
+  value: T[],
+  spec: T[] extends (Array<infer U> | ReadonlyArray<infer U>)
+    ? ISpliceSpec<U>
+    : never,
+) {
   invariant(
     Array.isArray(value),
     'Expected $splice target to be an array; got %s',
@@ -256,7 +334,7 @@ function invariantSplices(value: any, spec: any) {
   invariantSplice(spec.$splice);
 }
 
-function invariantSplice(value: any) {
+function invariantSplice<T>(value: T[]) {
   invariant(
     Array.isArray(value),
     'update(): expected spec of $splice to be an array of arrays; got %s. ' +
@@ -273,7 +351,9 @@ function invariantApply(fn: any) {
   );
 }
 
-function invariantSet(spec: any) {
+function invariantSet<T, C extends CustomCommands<object> = never>(
+  spec: Spec<T, C>,
+) {
   invariant(
     Object.keys(spec).length === 1,
     'Cannot have more than one key in an object with $set',
@@ -325,7 +405,7 @@ export type CustomCommands<T> = T & { __noInferenceCustomCommandsBrand: any };
 export type Spec<T, C extends CustomCommands<object> = never> =
   | (
       T extends (Array<infer U> | ReadonlyArray<infer U>) ? ArraySpec<U, C> :
-      T extends (Map<infer K, infer V> | ReadonlyMap<infer K, infer V>) ? MapSpec<K, V> :
+      T extends (Map<infer K, infer V> | ReadonlyMap<infer K, infer V>) ? MapSpec<K, V, C> :
       T extends (Set<infer X> | ReadonlySet<infer X>) ? SetSpec<X> :
       T extends object ? ObjectSpec<T, C> :
       never
@@ -335,22 +415,39 @@ export type Spec<T, C extends CustomCommands<object> = never> =
   | ((v: T) => T)
   | (C extends CustomCommands<infer O> ? O : never);
 
+interface ISpliceSpec<T> {
+  $splice: Array<[number, number?] | [number, number, ...T[]]>;
+}
+
 type ArraySpec<T, C extends CustomCommands<object>> =
   | { $push: T[] }
   | { $unshift: T[] }
-  | { $splice: Array<[number, number?] | [number, number, ...T[]]> }
+  | ISpliceSpec<T>
   | { [index: string]: Spec<T, C> }; // Note that this does not type check properly if index: number.
 
-type MapSpec<K, V> =
+type MapAddSpec<K, V, C extends CustomCommands<object>> =
   | { $add: Array<[K, V]> }
-  | { $remove: K[] };
+  | { [key: string]: Spec<V, C> };
 
-type SetSpec<T> =
-  | { $add: T[] }
-  | { $remove: T[] };
+type MapRemoveSpec<K, V, C extends CustomCommands<object>> =
+  | { $remove: K[] }
+  | { [key: string]: Spec<V, C> };
+
+type MapSpec<K, V, C extends CustomCommands<object>> =
+  | { $add: Array<[K, V]> }
+  | { $remove: K[] }
+  | { [key: string]: Spec<V, C> };
+
+interface ISetAddSpec<T> { $add: T[]; }
+interface ISetRemoveSpec<T> { $remove: T[]; }
+type SetSpec<T> = ISetAddSpec<T> | ISetRemoveSpec<T>;
+
+interface IUnsetSpec<T> {
+  $unset: Array<keyof T>;
+}
 
 type ObjectSpec<T, C extends CustomCommands<object>> =
   | { $toggle: Array<keyof T> }
-  | { $unset: Array<keyof T> }
+  | IUnsetSpec<T>
   | { $merge: Partial<T> }
   | { [K in keyof T]?: Spec<T[K], C> };

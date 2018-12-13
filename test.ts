@@ -111,11 +111,15 @@ describe('immutability-helper module', () => {
 
   describe('$merge', () => {
     it('merges', () => {
-      expect(update({a: 'b'}, {$merge: {c: 'd'}} as any)).toEqual({a: 'b', c: 'd'});
+      interface ITest {
+        a: string;
+        c?: string;
+      }
+      expect(update<ITest>({a: 'b'}, {$merge: {c: 'd'}})).toEqual({a: 'b', c: 'd'});
     });
     it('does not mutate the original object', () => {
       const obj = Object.freeze({a: 'b'});
-      expect(() => update(obj, {$merge: {a: 'c'}})).not.toThrow();
+      expect(() => update<{a: string}>(obj, {$merge: {a: 'c'}})).not.toThrow();
     });
     it('only merges with an object', () => {
       expect(() => update({a: 'b'}, {$merge: 7} as any)).toThrow(
@@ -157,8 +161,12 @@ describe('immutability-helper module', () => {
       expect(update(original, {a: {$set: 2}})).not.toBe(original);
     });
     it('setting a property to undefined should add an enumerable key to final object with value undefined', () => {
-      const original = {a: 1};
-      const result = update(original, {b: {$set: undefined}} as any);
+      interface ITest {
+        a: number;
+        b?: undefined;
+      }
+      const original: ITest = {a: 1};
+      const result = update(original, {b: {$set: undefined}});
       expect(result).not.toBe(original);
       expect(result).toEqual({a: 1, b: undefined});
       expect(Object.keys(result).length).toEqual(2);
@@ -188,7 +196,10 @@ describe('immutability-helper module', () => {
 
   describe('$unset', () => {
     it('unsets', () => {
-      expect(update({a: 'b'}, {$unset: ['a']}).a).toBe(undefined as any);
+      interface ITest {
+        a?: string;
+      }
+      expect(update<ITest>({a: 'b'}, {$unset: ['a']}).a).toBe(undefined);
     });
     it('removes the key from the object', () => {
       const removed = update({a: 'b'}, {$unset: ['a']});
@@ -214,8 +225,12 @@ describe('immutability-helper module', () => {
       expect(update(child, {$unset: ['foo']}).foo).toEqual('Parent');
     });
     it('keeps reference equality when possible', () => {
-      const original = {a: 1};
-      expect(update(original, {$unset: ['b']} as any)).toBe(original);
+      interface ITest {
+        a?: number;
+        b?: number;
+      }
+      const original: ITest = {a: 1};
+      expect(update(original, {$unset: ['b']})).toBe(original);
       expect(update(original, {$unset: ['a']})).not.toBe(original);
     });
   });
@@ -268,13 +283,13 @@ describe('immutability-helper module', () => {
   });
 
   describe('$apply', () => {
-    const applier = node => ({v: node.v * 2});
+    const original = Object.freeze({v: 2});
+    const applier = (node: typeof original) => ({v: node.v * 2});
     it('applies', () => {
-      expect(update({v: 2}, {$apply: applier})).toEqual({v: 4});
+      expect(update(original, {$apply: applier})).toEqual({v: 4});
     });
     it('does not mutate the original object', () => {
-      const obj = Object.freeze({v: 2});
-      expect(() => update(obj, {$apply: applier})).not.toThrow();
+      expect(() => update(original, {$apply: applier})).not.toThrow();
     });
     it('only applies a function', () => {
       expect(() => update(2, {$apply: 123} as any)).toThrow(
@@ -282,33 +297,25 @@ describe('immutability-helper module', () => {
       );
     });
     it('keeps reference equality when possible', () => {
-      const original = {a: {b: {}}};
-      function identity(val) {
-        return val;
-      }
-      expect(update(original, {a: {$apply: identity}})).toBe(original);
-      expect(update(original, {a: {$apply: applier}} as any)).not.toBe(original);
+      expect(update(original, {v: {$apply: (v: number) => v}})).toBe(original);
+      expect(update(original, {v: {$apply: (v: number) => v * 2}})).not.toBe(original);
     });
   });
 
   describe('direct apply', () => {
+    const original = Object.freeze({v: 2});
     const applier = node => ({v: node.v * 2});
     it('applies', () => {
       const doubler = value => value * 2;
-      expect(update({v: 2}, applier)).toEqual({v: 4});
+      expect(update(original, applier)).toEqual({v: 4});
       expect(update(2, doubler)).toEqual(4);
     });
     it('does not mutate the original object', () => {
-      const obj = Object.freeze({v: 2});
-      expect(() => update(obj, applier)).not.toThrow();
+      expect(() => update(original, applier)).not.toThrow();
     });
     it('keeps reference equality when possible', () => {
-      const original = {a: {b: {}}};
-      function identity(val) {
-        return val;
-      }
-      expect(update(original, {a: identity})).toBe(original);
-      expect(update(original, {a: applier} as any)).not.toBe(original);
+      expect(update(original, {v: (v: number) => v})).toBe(original);
+      expect(update(original, {v: (v: number) => v * 2})).not.toBe(original);
     });
   });
 
@@ -321,7 +328,7 @@ describe('immutability-helper module', () => {
           f: [1],
           g: [2],
           h: [3],
-          i: {j: 'k'},
+          i: {j: 'k'} as {j: string; n?: string},
           l: 4,
           m: 'n',
         },
@@ -332,10 +339,10 @@ describe('immutability-helper module', () => {
           g: {$unshift: [6]},
           h: {$splice: [[0, 1, 7]]},
           i: {$merge: {n: 'o'}},
-          l: {$apply: x => x * 2},
-          m: x => x + x,
+          l: {$apply: (x: number) => x * 2},
+          m: (x: string) => x + x,
         },
-      } as any)).toEqual({
+      })).toEqual({
         a: 'b',
         c: {
           d: 'm',
@@ -503,9 +510,13 @@ describe('new Context()', () => {
   if (typeof Symbol === 'function' && Symbol('TEST').toString() === 'Symbol(TEST)') {
     describe('works with symbols', () => {
       it('in the source object', () => {
-        const obj = {a: 1};
+        interface ITest {
+          a: number;
+          c?: number;
+        }
+        const obj: ITest = {a: 1};
         obj[Symbol.for('b')] = 2;
-        expect(update(obj, {c: {$set: 3}} as any)[Symbol.for('b')]).toEqual(2);
+        expect(update(obj, {c: {$set: 3}})[Symbol.for('b')]).toEqual(2);
       });
       it('in the spec object', () => {
         const obj = {a: 1};
@@ -568,16 +579,18 @@ describe('new Context()', () => {
   });
 
   it('does not lose non integer keys of an array', () => {
-    interface IHasTop {
-      top: number;
-    }
     const state = { items: [
       { name: 'Superman', strength: 1000 },
       { name: 'Jim', strength: 2 },
-    ] };
-    (state.items as any as IHasTop).top = 0;
+    ] as Array<{
+      name: string;
+      strength: number;
+    }> & {
+      top: number;
+    }};
+    state.items.top = 0;
     const state2 = update(state, { items: { 1: { strength: { $set: 3 } } } });
-    expect((state2.items as any as IHasTop).top).toBe(0);
+    expect(state2.items.top).toBe(0);
   });
 
   it('supports Maps', () => {
@@ -586,7 +599,7 @@ describe('new Context()', () => {
     ]);
 
     const updatedState = update(state, {
-      ['mapKey']: {$set: 'updatedMapValue' },
+      mapKey: {$set: 'updatedMapValue' },
     } as any);
 
     expect(updatedState).toEqual(
@@ -602,7 +615,7 @@ describe('new Context()', () => {
     ]);
 
     const updatedState = update(state, {
-      ['mapKey']: { apple: { $set: ['green', 'red'] } },
+      mapKey: { apple: { $set: ['green', 'red'] } },
     } as any);
 
     expect(updatedState).toEqual(
@@ -616,9 +629,13 @@ describe('new Context()', () => {
   });
 
   it('supports Maps and keeps reference equality when possible', () => {
-    const original = new Map([['a', { b: 1 }]]);
-    expect(update(original, { a: { $merge: {} } } as any)).toBe(original);
-    expect(update(original, { a: { $merge: { c: 2 } } } as any)).not.toBe(original);
+    interface ITest {
+      b: number;
+      c?: number;
+    }
+    const original = new Map([['a', { b: 1 } as ITest]]);
+    expect(update(original, { a: { $merge: {} } })).toBe(original);
+    expect(update(original, { a: { $merge: { c: 2 } } })).not.toBe(original);
   });
 });
 
