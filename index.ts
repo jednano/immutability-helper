@@ -58,7 +58,7 @@ export class Context {
     this.update = this.update.bind(this);
     // Deprecated: update.extend, update.isEquals and update.newContext
     (this.update as any).extend = this.extend = this.extend.bind(this);
-    (this.update as any).isEquals = (x, y) => x === y;
+    (this.update as any).isEquals = (x: any, y: any) => x === y;
     (this.update as any).newContext = () => new Context().update;
   }
   get isEquals() {
@@ -210,13 +210,17 @@ function $unset<T extends {[key: string]: any}>(
 
 function $add<T, C extends CustomCommands<object> = never>(
   values: T extends (Map<infer K, infer V> | ReadonlyMap<infer K, infer V>)
-    ? MapSpec<K, V, C>
+    ? Array<[K, V]>
     : T extends (Set<infer X> | ReadonlySet<infer X>)
-      ? SetSpec<X>
+      ? X[]
       : never,
-  nextObject: any,
+  nextObject: T extends (Map<infer K, infer V> | ReadonlyMap<infer K, infer V>)
+    ? Map<K, V>
+    : T extends (Set<infer X> | ReadonlySet<infer X>)
+      ? Set<X>
+      : never,
   _spec: T extends (Map<infer K, infer V> | ReadonlyMap<infer K, infer V>)
-    ? MapSpec<K, V, C>
+    ? MapAddSpec<K, V, C>
     : T extends (Set<infer X> | ReadonlySet<infer X>)
       ? SetSpec<X>
       : never,
@@ -225,20 +229,49 @@ function $add<T, C extends CustomCommands<object> = never>(
   invariantMapOrSet(nextObject, '$add');
   invariantSpecArray(values, '$add');
   if (type(nextObject) === 'Map') {
-    values.forEach(([key, value]) => {
-      if (nextObject === originalObject && nextObject.get(key) !== value) {
+    (values as Array<[any, any]>).forEach(([key, value]) => {
+      if (nextObject === originalObject && (nextObject as Map<any, any>).get(key) !== value) {
         nextObject = copy(originalObject);
       }
-      nextObject.set(key, value);
+      (nextObject as Map<any, any>).set(key, value);
     });
   } else {
-    values.forEach((value: any) => {
-      if (nextObject === originalObject && !nextObject.has(value)) {
+    (values as any[]).forEach(value => {
+      if (nextObject === originalObject && !(nextObject as Set<any>).has(value)) {
         nextObject = copy(originalObject);
       }
-      nextObject.add(value);
+      (nextObject as Set<any>).add(value);
     });
   }
+  return nextObject;
+}
+
+function $remove<T, C extends CustomCommands<object> = never>(
+  values: T extends (Map<infer K, infer V> | ReadonlyMap<infer K, infer V>)
+    ? Array<[K, V]>
+    : T extends (Set<infer X> | ReadonlySet<infer X>)
+      ? X[]
+      : never,
+  nextObject: T extends (Map<infer K, infer V> | ReadonlyMap<infer K, infer V>)
+    ? Map<K, V>
+    : T extends (Set<infer X> | ReadonlySet<infer X>)
+      ? Set<X>
+      : never,
+  _spec: T extends (Map<infer K, infer V> | ReadonlyMap<infer K, infer V>)
+    ? MapRemoveSpec<K, V, C>
+    : T extends (Set<infer X> | ReadonlySet<infer X>)
+      ? SetSpec<X>
+      : never,
+  originalObject: any,
+) {
+  invariantMapOrSet(nextObject, '$remove');
+  invariantSpecArray(values, '$remove');
+  values.forEach((key: any) => {
+    if (nextObject === originalObject && nextObject.has(key)) {
+      nextObject = copy(originalObject);
+    }
+    nextObject.delete(key);
+  });
   return nextObject;
 }
 
@@ -250,17 +283,7 @@ const defaultCommands = {
   $toggle,
   $unset,
   $add,
-  $remove(value: any, nextObject: any, _spec: any, originalObject: any) {
-    invariantMapOrSet(nextObject, '$remove');
-    invariantSpecArray(value, '$remove');
-    value.forEach((key: any) => {
-      if (nextObject === originalObject && nextObject.has(key)) {
-        nextObject = copy(originalObject);
-      }
-      nextObject.delete(key);
-    });
-    return nextObject;
-  },
+  $remove,
   $merge(value: any, nextObject: any, _spec: any, originalObject: any) {
     invariantMerge(nextObject, value);
     getAllKeys(value).forEach((key: any) => {
@@ -309,7 +332,7 @@ function invariantSpecArray<T, C extends CustomCommands<object> = never>(
   spec: T[] extends (Array<infer U> | ReadonlyArray<infer U>)
     ? ArraySpec<U, C> & {[key: string]: any}
     : never,
-  command: '$push' | '$remove' | '$toggle' | '$unset' | '$unshift',
+  command: '$add' | '$push' | '$remove' | '$toggle' | '$unset' | '$unshift',
 ) {
   invariant(
     Array.isArray(spec),
@@ -434,9 +457,8 @@ type MapRemoveSpec<K, V, C extends CustomCommands<object>> =
   | { [key: string]: Spec<V, C> };
 
 type MapSpec<K, V, C extends CustomCommands<object>> =
-  | { $add: Array<[K, V]> }
-  | { $remove: K[] }
-  | { [key: string]: Spec<V, C> };
+  | MapAddSpec<K, V, C>
+  | MapRemoveSpec<K, V, C>;
 
 interface ISetAddSpec<T> { $add: T[]; }
 interface ISetRemoveSpec<T> { $remove: T[]; }

@@ -264,16 +264,12 @@ describe('immutability-helper module', () => {
     it('works on Map', () => {
       const state = new Map([[1, 2], [3, 4], [5, 6]]);
       const state2 = update(state, {$remove: [1, 5]});
-      expect(state2.has(1)).toBe(false);
-      expect(state2.has(3)).toBe(true);
-      expect(state2.get(3)).toBe(4);
-      expect(state2.has(6)).toBe(false);
+      expect(state2).toMatchSnapshot();
     });
     it('works on Set', () => {
       const state = new Set([1, 2, 3, 4]);
       const state2 = update(state, {$remove: [2, 3]});
-      expect(state2.has(1)).toBe(true);
-      expect(state2.has(2)).toBe(false);
+      expect(state2).toMatchSnapshot();
     });
     it('throws on a non Map or Set', () => {
       expect(() => update(2, {$remove: [1]} as any)).toThrow(
